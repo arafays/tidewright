@@ -31,6 +31,12 @@ float repose(float m, float c){
   float over = smoothstep(0.90, 1.0, m);
   float s = mix(0.655, 3.9, wet);
   s *= (1.0 + 2.35*c);
+  /* Packed sand keeps its shape after it dries. The water is what let you
+     build the face; the packing is what holds it up, and packing does not
+     evaporate. Without this floor a tower you moulded at noon slumps into a
+     heap by mid-afternoon, which is not what a beach does. */
+  s = max(s, 0.655 + 14.0*c*c);
+  /* soaking still ruins it — a floor for dry sand, not for soup */
   s *= (1.0 - 0.86*over);
   return max(s, 0.38);
 }
@@ -128,7 +134,17 @@ void main(){
     float repn = repose(Sn.g, Sn.b);
     repn *= (1.0 - 0.93*clamp(wan/(1.0 + 3.4*Sn.b + 1.1*Sn.g), 0.0, 1.0));
     float rep = 0.5*(rep0 + repn);
-    float rt  = 0.5*(rate + 0.115 + 0.42*clamp(wan,0.0,1.0));
+    /* Relaxation rate for this pair — and it has a hard ceiling. All eight
+       neighbours pull on the same cell in the same substep, so a per-neighbour
+       rate much past an eighth overshoots: the cell throws away more than its
+       excess, the neighbour throws it straight back, and the pair rings at the
+       grid frequency. Under a breaking wave this used to reach 0.535, four
+       times over the limit, and the shoreline came out as a row of alternating
+       one-cell spikes — a picket fence that was the solver oscillating, not the
+       sea eroding. The sea still bites just as hard; it does it by dropping the
+       angle of repose, which is the physical lever, not by moving sand faster
+       than the scheme can stay stable. */
+    float rt  = min(0.5*(rate + 0.115 + 0.42*clamp(wan,0.0,1.0)), 0.118);
 
     float dH  = H0 - Hn;
     float thr = rep*dist;
@@ -166,7 +182,12 @@ void main(){
     m = clamp((m*max(hOld,0.0) + mAcc)/denom, 0.0, 1.0);
     c = clamp((c*max(hOld,0.0) + cAcc*0.35)/denom, 0.0, 1.0);
   }
-  c *= 1.0 - min(abs(dSand)*9.0, 0.88);
+  /* Sand that moves arrives unpacked — but only in proportion to how much of
+     the column actually moved. Wiping the whole cell's packing the instant a
+     single grain shifts makes slumping self-feeding: it loosens, so it slumps
+     more, so it loosens more, and a tower that should have settled a centimetre
+     runs all the way down to a heap. */
+  c *= 1.0 - clamp(abs(dSand)/max(h, 0.08), 0.0, 1.0)*0.55;
   /* capillary spread — small, or a wet tower drains into the dry beach
      around it in a couple of seconds */
   m = clamp(m + mDiff*0.0022, 0.0, 1.0);
@@ -192,11 +213,21 @@ void main(){
      still standing at the end of it, fast enough that you have to keep the
      bucket moving. Roughly a hundred seconds of full sun to go from soaked
      to useless. */
+  float mWet = m;
   m -= uDt*uSunDry*(0.0019 + 0.0044*(1.0 - table));
   m = clamp(m, 0.0, 1.0);
   f = max(0.0, f - uDt*0.085);
 
-  c = max(0.0, c - uDt*(0.0048 + 0.042*smoothstep(0.91, 1.0, m)));
+  /* Sand that dries out of a wet state sets. The bridges between the grains
+     go with the water, but the grains have already locked where you pressed
+     them and the surface crusts over — so a castle stiffens as it dries
+     instead of collapsing. Only sand that was genuinely wet earns it; dry
+     beach sand blown into a heap sets to nothing. */
+  c = clamp(c + max(mWet - m, 0.0)*1.6*smoothstep(0.12, 0.42, mWet), 0.0, 1.0);
+
+  /* Packing barely fades on its own — it is undone by the sea, by digging and
+     by slumping, all of which take it away far faster than time does. */
+  c = max(0.0, c - uDt*(0.0004 + 0.042*smoothstep(0.91, 1.0, m)));
 
   /* ═══════════ sand that has just landed ═══════════
      Applied on the first substep only — uDepScale is 0 for the rest, or the
@@ -309,9 +340,10 @@ void main(){
       if(want > h){
         float k = clamp(ms.x*1.6, 0.0, 1.0);
         h = want;
-        /* the sand that comes out is the sand that went in */
+        /* the sand that comes out is the sand that went in, pressed hard
+           against the inside of the mould on its way */
         m = mix(m, uStamp3.z, k);
-        c = max(c, 0.62*k);
+        c = max(c, 0.80*k);
       }
     }
   }

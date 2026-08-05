@@ -315,6 +315,7 @@ class Game {
         if (a === 'novena') self.startRun(1);
         else if (a === 'continue') self.startRun(self.save.tide);
         else if (a === 'free') self.startSandbox();
+        else if (a === 'creative') self.startCreative();
         else if (a === 'codex') self.openCodex();
         else if (a === 'settings') self.openOver('#settings');
         else if (a === 'howto') self.openOver('#howto');
@@ -532,7 +533,10 @@ class Game {
 
   /* what the pail actually has left to give — sand in the air has left it
      but has not reached the ground, so it belongs to neither yet */
-  pailShown() { return Math.max(0, this.pail - this.inFlight); }
+  pailShown() {
+    if (this.mode === 'creative') return Infinity;
+    return Math.max(0, this.pail - this.inFlight);
+  }
 
   mouldDef() { return T.MOULDS[T.clamp(this.mould.idx, 0, T.MOULDS.length - 1)]; }
 
@@ -848,6 +852,26 @@ class Game {
     this.firstRun();
   }
 
+  /* Endless Sand — the pail never runs out and the sea never climbs. Everything
+     else is the same beach: sand still slumps, still dries, still sets. You are
+     only spared the arithmetic of where the material came from. */
+  startCreative() {
+    this.mode = 'creative';
+    this.tideIdx = 4;
+    this.hide('#menu');
+    this.state = 'play'; this.phase = 'ebb'; this.phaseT = 1e9;
+    this.dayT = 0.335;
+    this.resetField();
+    this.pailWet = 0.66;              // a bottomless pail of properly damp sand
+    const s = T.sunFromDay(this.dayT);
+    this.sky.setSun(s[0], s[1]);
+    this.show('#hud');
+    this.layoutFor('sandbox');
+    this.refreshLocks();
+    this.toast('Endless sand. Nothing to dig for, nothing coming for it.', 'lore');
+    this.firstRun();
+  }
+
   beginTide() {
     const t = this.tide();
     this.state = 'brief';
@@ -1113,7 +1137,7 @@ class Game {
   /* ─────────────────────── objectives / hud ─────────────────────── */
   /* one left column: the tide and its gauge, or the day. Never both. */
   layoutFor(mode) {
-    const sandbox = mode === 'sandbox';
+    const sandbox = mode !== 'novena';
     $('#tidePanel').classList.toggle('hidden', sandbox);
     $('#gauge').classList.toggle('hidden', sandbox);
     $('#dayPanel').classList.toggle('hidden', !sandbox);
@@ -1121,7 +1145,7 @@ class Game {
 
   renderObjectives() {
     const ul = $('#objList'); ul.innerHTML = '';
-    if (this.mode === 'sandbox') { $('#objPanel').style.display = 'none'; return; }
+    if (this.mode !== 'novena') { $('#objPanel').style.display = 'none'; return; }
     $('#objPanel').style.display = '';
     this.tide().objs.forEach(o => {
       const li = document.createElement('li');
@@ -1150,12 +1174,14 @@ class Game {
     if (Math.abs(worth - this.shownScore) < 0.6) this.shownScore = worth;
     $('#scoreVal').textContent = Math.round(this.shownScore).toLocaleString('en-GB');
     const pv = this.pailShown();
-    const pf = T.clamp(pv / PAIL_SHOW, 0, 1);
+    const endless = !isFinite(pv);
+    const pf = endless ? 1 : T.clamp(pv / PAIL_SHOW, 0, 1);
     $('#pailFill').style.width = (pf * 100) + '%';
-    $('#pailFill').parentElement.classList.toggle('low', pv < 0.6);
+    $('#pailFill').parentElement.classList.toggle('low', !endless && pv < 0.6);
     const pw = Math.round(this.pailWet * 100);
     const cls = this.pailWet > 0.88 ? 'soak' : (this.pailWet > 0.5 ? 'damp' : 'dry');
-    $('#pailText').innerHTML = pv.toFixed(2) + ' m³<i class="' + cls + '">' + pw + '% wet</i>';
+    $('#pailText').innerHTML = (endless ? '∞' : pv.toFixed(2) + ' m³') +
+      '<i class="' + cls + '">' + pw + '% wet</i>';
 
     this.updateHint();
 
@@ -1327,6 +1353,12 @@ class Game {
       this.seaTarget = t.low + 0.13 + 0.13 * swell;
       this.waveAmp = t.amp * (0.42 + 0.16 * (0.5 + 0.5 * swell));
       this.erodeK = 0.22 + 0.14 * (0.5 + 0.5 * swell);
+    } else if (this.mode === 'creative') {
+      /* the water sits where it is and stays there. It still breaks on the
+         shore, because a still sea looks dead — it just never climbs. */
+      this.seaTarget = t.low;
+      this.waveAmp = t.amp * 0.34;
+      this.erodeK = 0.05;
     }
     this.seaBase = T.damp(this.seaBase, this.seaTarget, 3.0, dt);
 
@@ -1336,7 +1368,8 @@ class Game {
       const done = this.phase === 'ebb' ? (t.build - this.phaseT) : (t.build + (t.flood - this.phaseT));
       const u = T.clamp(done / total, 0, 1) * 0.55;
       this.sky.setSun(T.lerp(this.sunA[0], this.sunB[0], u), T.lerp(this.sunA[1], this.sunB[1], u));
-    } else if (!this.photo && this.mode === 'sandbox' && this.state === 'play') {
+    } else if (!this.photo && this.state === 'play' &&
+               (this.mode === 'sandbox' || this.mode === 'creative')) {
       /* the whole day, running */
       this.dayT = (this.dayT + dt * T.DAY_SPEEDS[this.daySpeed].s) % 1;
       const s = T.sunFromDay(this.dayT);
@@ -1385,8 +1418,10 @@ class Game {
       if (steps === 0) this.pendingDeposit = true;
       this.inFlight = T.damp(this.inFlight, 0, 4.5, dt);
       /* sand left standing in a pail in the sun dries at about the rate the
-         ground does — collect it wet, use it soon */
-      this.pailWet = T.clamp(this.pailWet - dt * e.sunDry * 0.0088, 0, 1);
+         ground does — collect it wet, use it soon. In Endless Sand the pail is
+         a fiction anyway, so it stays as damp as you last made it. */
+      if (this.mode !== 'creative')
+        this.pailWet = T.clamp(this.pailWet - dt * e.sunDry * 0.0088, 0, 1);
     }
     this.sim.updateAO();
 

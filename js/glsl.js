@@ -310,6 +310,26 @@ float seaLevelAt(float base, float t){
 vec4 gerstner(vec2 p, float t, float d, float amp, int nw){
   vec3 disp = vec3(0.0);
   float brk = 0.0, wsum = 0.0;
+
+  /* First, how steep does this sum WANT to be? A Gerstner surface stays
+     single-valued only while its total steepness stays under one; past that the
+     crests roll over and the sheet passes through itself. The clamp below is
+     per wave, so five waves were each allowed 0.92 and the sum was allowed 4.6
+     — and on the late tides, where the swell is biggest and refraction has
+     turned every component to face the beach so they add rather than cancel,
+     it really did go over. That is the folded, overlapping, flickering
+     triangles on a rising tide. Budget the whole sum instead of each part. */
+  float stSum = 0.0;
+  for(int i=0;i<5;i++){
+    if(i>=nw) break;
+    vec4 Wq = waveParam(i);
+    float kq = TAU / Wq.z;
+    float thq = tanh(clamp(kq*max(d, 0.015), 0.02, 10.0));
+    float Aq = min(Wq.w*amp / sqrt(max(thq, 0.055)), 0.46*max(d, 0.02));
+    stSum += min(0.92, Aq*kq*2.6);
+  }
+  float budget = min(1.0, 0.80/max(stSum, 1e-4));
+
   for(int i=0;i<5;i++){
     if(i>=nw) break;
     vec4 W = waveParam(i);
@@ -330,12 +350,16 @@ vec4 gerstner(vec2 p, float t, float d, float amp, int nw){
     A = min(A, Ab);
 
     float ph = dot(dir*k, p) - c*k*t;
-    /* Horizontal orbital motion. Unclamped this reaches ~3 m on the long
-       period, which drags the shoreline vertices bodily through the sand and
-       shreds the waterline into a comb. Tie it to the amplitude and shut it
-       down as the bottom comes up, which is also what actually happens. */
-    float Q  = min(0.92, A*k*2.6);
-    float horiz = min(Q/k, A*2.2)*smoothstep(0.02, 0.85, d);
+    /* Horizontal orbital motion, and the whole reason the waterline used to
+       come out as a comb of spikes. The depth under a vertex is measured
+       *before* this term moves it, so a vertex shoved half a metre up a
+       sloping beach carries the wrong depth with it — it ends up buried in one
+       place and standing proud of the sand in the next, and the shore turns
+       into a picket fence. Orbital motion belongs to deep water anyway: it
+       collapses as the bottom comes up, so hold it off until there is real
+       water under the wave, and never let it exceed the depth it is moving in. */
+    float Q  = min(0.92, A*k*2.6)*budget;
+    float horiz = min(min(Q/k, A*2.2), d*0.45)*smoothstep(0.06, 1.10, d);
     disp.xz -= dir*horiz*sin(ph);
     disp.y  += A*cos(ph);
   }

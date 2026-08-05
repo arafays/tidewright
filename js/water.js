@@ -55,6 +55,13 @@ const float KK = 7.2;
 float mapAxis(float s){
   return sign(s)*R0*(exp(KK*abs(s)) - 1.0)/(exp(KK) - 1.0);
 }
+/* How wide this vertex's own cell is, on one axis, in metres — the derivative
+   of the warp times one grid step. The grid is warped per axis, so near the
+   shore a cell can be four centimetres across and a metre deep, and a single
+   scalar offset cannot describe it. */
+float cellAt(float s, float n){
+  return (2.0/n)*R0*KK*exp(KK*abs(s))/(exp(KK) - 1.0);
+}
 
 vec3 waterPoint(vec2 base, out float brk, out float dep){
   float g  = groundY(base);
@@ -91,9 +98,16 @@ void main(){
   float brk, dep;
   vec3 p0 = waterPoint(base, brk, dep);
   float b1, b2, d1, d2;
-  float e = 0.36 + length(base - uCamPos.xz)*0.006;
-  vec3 px = waterPoint(base + vec2(e,0.0), b1, d1);
-  vec3 pz = waterPoint(base + vec2(0.0,e), b2, d2);
+  /* Sample the neighbours at exactly one cell, so the normal describes the
+     triangle it is about to be interpolated across. The old fixed offset
+     (0.36 m + 0.6 cm per metre of distance) was right only within a few metres
+     of the camera; by 200 m it read a 1.5 m patch of sea and smeared the answer
+     over an eight-metre triangle, so neighbouring vertices got uncorrelated
+     normals and the far water broke into a mosaic of flat facets. */
+  float nGrid = float(W);
+  vec2 cell = vec2(cellAt(s.x, nGrid), cellAt(s.y, nGrid));
+  vec3 px = waterPoint(base + vec2(cell.x, 0.0), b1, d1);
+  vec3 pz = waterPoint(base + vec2(0.0, cell.y), b2, d2);
 
   vWP    = p0;
   vN     = normalize(cross(pz - p0, px - p0));

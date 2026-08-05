@@ -63,7 +63,7 @@ kind after the initial page load.
 
 ## The game
 
-There are two ways in.
+There are three ways in.
 
 **Slack Water** is the cozy one, and it's where the day lives. No tide, no
 clock, every mould and every toy unlocked, and a full sunrise-to-stars day
@@ -72,6 +72,12 @@ over the water, which is the entire reason anyone builds on a west-facing
 beach. Scrub the time with the slider, hold it where you like it, or let it
 run at *slow*, *gentle* or *brisk*. Two soft tides walk up to the edge of your
 work across the day and walk back again, and neither of them takes anything.
+
+**Endless Sand** takes the arithmetic away. The pail is bottomless and the sea
+stays where it is, so you can build without first working out where the material
+is coming from. Everything else is the same beach — sand still slumps at its
+angle of repose, still needs wetting to stand, still sets as it dries. You are
+only spared the bookkeeping.
 
 **The Novena** is the campaign: nine tides, each giving you a stretch of low
 water to build in and then taking it back, higher and rougher each time, from
@@ -254,8 +260,8 @@ The same castle, nine times:
 Rampart (drag to raise a wall to your starting height), Carve (press on the
 level you want and drag: everything you cross comes down to it, so a stroke
 across a wall leaves a gateway), Level, Drip (grows the knobbled spires only a
-beach can make), Adorn. They unlock across the first five tides; Slack Water
-gives you all of them at once.
+beach can make), Adorn. They unlock across the first five tides; Slack Water and
+Endless Sand give you all of them at once.
 
 One honest limit worth stating up front: the sand is a **heightfield** — one
 height per column — so it can make notches, gateways, moats and overhanging
@@ -288,6 +294,16 @@ angle of repose while you watch. Drip very wet sand onto the same spot and it
 stands in a near-vertical spire on a dry base spreading at 33° — two materials,
 one solver. Sand in the air belongs to neither the pail nor the ground, so the
 pail meter accounts for it separately while it's falling.
+
+**And it sets.** Water is what lets you build the face; *packing* is what holds
+it up, and packing doesn't evaporate. Sand that dries out of a wet state gains
+compaction rather than losing strength — the bridges between the grains go, but
+the grains stay locked where you pressed them and the surface crusts. So a
+turret you mould at noon is still exactly as tall when it has dried bone dry:
+measured, a 1.9 m tower goes from 87% moisture to zero and loses **0.000 m**.
+Loose dry sand still can't hold anything — pour a heap from a dry pail and it
+slumps half a metre in eight seconds. Packed and dry is strong; loose and dry is
+not, which is the actual distinction on a real beach.
 
 Digging stays instant. Responsiveness matters more there than spectacle.
 
