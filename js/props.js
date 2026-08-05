@@ -69,6 +69,28 @@ class Mesh {
     this.quad(p(-X,sy,-Z), p(X,sy,-Z), p(X,sy,Z), p(-X,sy,Z), col, kind);
     this.quad(p(-X,0,Z), p(X,0,Z), p(X,0,-Z), p(-X,0,-Z), col, kind);
   }
+  /* a tapered four-sided tube between two points — legs and claws, which are
+     the only things here that don't run along an axis */
+  tube(a, b, r0, r1, col, kind, pa, pb) {
+    const dx = b[0]-a[0], dy = b[1]-a[1], dz = b[2]-a[2];
+    const L = Math.hypot(dx, dy, dz) || 1;
+    const ax = dx/L, ay = dy/L, az = dz/L;
+    let ux = 0, uy = 1, uz = 0;
+    if (Math.abs(ay) > 0.9) { ux = 1; uy = 0; uz = 0; }
+    let t1x = uy*az - uz*ay, t1y = uz*ax - ux*az, t1z = ux*ay - uy*ax;
+    const l1 = Math.hypot(t1x, t1y, t1z) || 1; t1x /= l1; t1y /= l1; t1z /= l1;
+    const t2x = ay*t1z - az*t1y, t2y = az*t1x - ax*t1z, t2z = ax*t1y - ay*t1x;
+    const P = (base, rad, cc, ss) => [
+      base[0] + (t1x*cc + t2x*ss)*rad,
+      base[1] + (t1y*cc + t2y*ss)*rad,
+      base[2] + (t1z*cc + t2z*ss)*rad];
+    for (let i = 0; i < 4; i++) {
+      const a0 = i/4*Math.PI*2, a1 = (i+1)/4*Math.PI*2;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      this.quad(P(a, r0, c0, s0), P(a, r0, c1, s1), P(b, r1, c1, s1), P(b, r1, c0, s0),
+                col, kind, pa, pa, pb, pb);
+    }
+  }
   mark(name, fn) {
     const start = this.count;
     fn(this);
@@ -352,6 +374,58 @@ function buildGull() {
   return m;
 }
 
+/* A shore crab, about twenty centimetres across the carapace at scale 1.
+   Legs are kind 5 and carry their position around the body in param, so the
+   vertex shader can run a gait off a single phase number — which means the
+   legs stop dead when the crab stops, for free. Claws are kind 6. */
+function buildCrab() {
+  const m = new Mesh();
+  const shell  = [0.44, 0.20, 0.145];
+  const shell2 = [0.54, 0.285, 0.19];
+  const limb   = [0.48, 0.235, 0.16];
+  const eye    = [0.04, 0.035, 0.04];
+
+  /* carapace — wider than long, and flatter than either */
+  m.dome(0, 0.034, 0, 0.100, 0.052, 13, 4, shell, 0, 0.70);
+  m.dome(0, 0.034, 0, 0.100, -0.030, 13, 3, shell2, 0, 0.70);
+
+  /* eight legs, four a side, alternating phase so it actually walks */
+  for (let s = -1; s <= 1; s += 2) {
+    for (let i = 0; i < 4; i++) {
+      const zz = -0.048 + i*0.034;
+      const ph = ((i*0.5) + (s > 0 ? 0.5 : 0.0)) % 1.0;
+      const reach = 0.150 + (i === 0 || i === 3 ? -0.020 : 0.012);
+      const hip  = [s*0.052, 0.040, zz];
+      const knee = [s*(reach*0.62), 0.062, zz + s*0.004];
+      const foot = [s*reach, 0.0, zz + 0.014];
+      m.tube(hip,  knee, 0.0105, 0.0085, limb, 5, ph, ph);
+      m.tube(knee, foot, 0.0085, 0.0035, limb, 5, ph, ph);
+    }
+  }
+
+  /* two claws, held out in front — a fat hand with two short blunt fingers,
+     because a pair of thin spikes reads as an insect, not a crab */
+  for (let s = -1; s <= 1; s += 2) {
+    const sh   = [s*0.052, 0.038, 0.050];
+    const el   = [s*0.098, 0.030, 0.090];
+    const hand = [s*0.124, 0.033, 0.116];
+    m.tube(sh, el,  0.0135, 0.0120, limb,   6, 0.0, 0.25);
+    m.tube(el, hand, 0.0180, 0.0170, shell2, 6, 0.30, 0.5);
+    const tipU = [s*0.142, 0.041, 0.148];
+    const tipL = [s*0.140, 0.021, 0.146];
+    m.tube(hand, tipU, 0.0092, 0.0044, shell2, 6, 0.6,  1.0);
+    m.tube(hand, tipL, 0.0092, 0.0044, shell2, 6, 0.6, -1.0);
+  }
+
+  /* eyestalks */
+  for (let s = -1; s <= 1; s += 2) {
+    const b = [s*0.026, 0.070, 0.044], tp = [s*0.030, 0.098, 0.050];
+    m.tube(b, tp, 0.0060, 0.0055, limb, 0, 0, 0);
+    m.dome(s*0.030, 0.096, 0.050, 0.0105, 0.011, 6, 2, eye, 0);
+  }
+  return m;
+}
+
 /* ─────────────────────────── shaders ─────────────────────────── */
 const PROP_VS = `
 layout(location=0) in vec3 aPos;
@@ -404,8 +478,26 @@ void main(){
     p.y += aInfo.y*abs(p.z)*f*0.85;
     p.z *= 1.0 - 0.10*abs(f);
   }
+  /* crab legs — the gait phase arrives in the seed slot, and it only advances
+     while the crab is actually walking, so a crab that has stopped stands
+     still without anyone having to tell the shader about it */
+  if(aInfo.x > 4.5 && aInfo.x < 5.5){
+    float ph = seed + aInfo.y*6.2831;
+    float lift = max(0.0, sin(ph));
+    float swing = cos(ph);
+    float far = abs(p.x)/max(scale, 1e-4);       // 0 at the hip, 1 at the foot
+    p.y += lift*0.055*far*scale;
+    p.z += swing*0.030*far*scale;
+    p.x -= swing*0.012*far*scale*sign(p.x);
+  }
+  /* claws — a slow idle open and close, and they wave when it hurries */
+  if(aInfo.x > 5.5 && aInfo.x < 6.5){
+    float w = sin(uTime*1.7 + seed*0.35)*0.5 + 0.5;
+    p.y += aInfo.y*(0.006 + 0.014*w)*scale;
+    p.z += abs(aInfo.y)*0.004*w*scale;
+  }
   /* pinwheel — spins about its own axle, faster in a gust */
-  if(aInfo.x > 3.5){
+  if(aInfo.x > 3.5 && aInfo.x < 4.5){
     float spin = uTime*(1.6 + uWind*5.5) + seed*3.0;
     float pivot = 0.70*scale;
     float cs = cos(spin), sn = sin(spin);
@@ -515,6 +607,7 @@ void main(){ fragColor = vec4(1.0); }`;
 const TYPES = ['flag', 'shell', 'star', 'wood', 'lantern', 'cairn',
                'parasol', 'pinwheel', 'pail', 'boat', 'bottle', 'kelp'];
 const MAX_INST = 160;
+const MAX_CRAB = 11;
 
 class Props {
   constructor(gl, sim) {
@@ -530,6 +623,12 @@ class Props {
     this.gvbo = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.gvbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gmesh.v), gl.STATIC_DRAW);
+
+    const cmesh = buildCrab();
+    this.crabPart = { first: 0, count: cmesh.count };
+    this.cvbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cvbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cmesh.v), gl.STATIC_DRAW);
 
     this.prog  = new T.Program(gl, T.HEAD + PROP_VS, T.HEAD_S + T.COMMON + PROP_FS, 'prop');
     this.depth = new T.Program(gl, T.HEAD + PROP_VS, T.HEAD + PROP_DEPTH_FS, 'propDepth');
@@ -558,6 +657,24 @@ class Props {
         cz: -6 + (rng()-0.5)*22, cx: (rng()-0.5)*22, bob: rng()*6.28
       });
     }
+    /* crabs */
+    this.crabBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.crabBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, MAX_CRAB * 8 * 4, gl.DYNAMIC_DRAW);
+    this.crabData = new Float32Array(MAX_CRAB * 8);
+    this.crabVAO = this._makeVAO(this.cvbo, this.crabBuf);
+    this.crabs = [];
+    const cr = T.rng(4211);
+    for (let i = 0; i < MAX_CRAB; i++) {
+      this.crabs.push({
+        x: (cr() - 0.5) * 34, z: -16 + cr() * 20,
+        dir: cr() * Math.PI * 2, sp: 0, gait: cr() * 6.28,
+        face: cr() > 0.5 ? 1 : -1,
+        scale: 0.52 + cr() * 0.36,
+        t: cr() * 3, moving: false, bolt: 0
+      });
+    }
+
     this.list = [];
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
@@ -654,6 +771,70 @@ class Props {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
+  /* Crabs. They scuttle in bursts and sit still between them, they walk
+     sideways because crabs do, and they keep to the wet band above the
+     waterline — so when the tide climbs they get pushed up the beach ahead of
+     it without anyone scripting a retreat. Come at one with a tool and it
+     bolts. The heightfield places them, so they walk over anything you build. */
+  updateCrabs(t, dt, seaLevel, cursor) {
+    const d = this.crabData;
+    /* the beach profile the tide gauge uses, solved for z at the water's edge */
+    const zWater = (1.55 - seaLevel) / 0.0705 - 24;
+    const zSafe = zWater - 1.1;
+
+    for (let i = 0; i < this.crabs.length; i++) {
+      const c = this.crabs[i];
+
+      if (cursor && cursor.valid) {
+        const dx = c.x - cursor.x, dz = c.z - cursor.z;
+        const r2 = dx*dx + dz*dz;
+        if (r2 < 5.3) {
+          c.dir = Math.atan2(dz, dx);          // straight away from the hand
+          c.bolt = 1.1;
+          c.moving = true;
+          c.t = Math.max(c.t, 0.5);
+        }
+      }
+
+      c.bolt = Math.max(0, c.bolt - dt);
+      c.t -= dt;
+      if (c.t <= 0) {
+        if (c.moving) { c.moving = false; c.t = 0.7 + Math.random()*3.0; }
+        else {
+          c.moving = true;
+          c.t = 0.4 + Math.random()*1.6;
+          c.dir = Math.random()*Math.PI*2;
+          c.sp = 0.30 + Math.random()*0.70;
+          if (Math.random() < 0.25) c.face = -c.face;
+        }
+      }
+
+      if (c.moving || c.bolt > 0) {
+        const sp = (c.moving ? c.sp : 0.55) * (1 + c.bolt*2.4);
+        let nx = c.x + Math.cos(c.dir)*sp*dt;
+        let nz = c.z + Math.sin(c.dir)*sp*dt;
+        /* the sea, and the ends of the world */
+        if (nz > zSafe)  { c.dir = -Math.PI*0.5 + (Math.random()-0.5)*0.7; nz = zSafe; }
+        if (nz < -21)    { c.dir =  Math.PI*0.5 + (Math.random()-0.5)*0.7; nz = -21; }
+        if (nx >  21)    { c.dir = Math.PI - c.dir; nx = 21; }
+        if (nx < -21)    { c.dir = Math.PI - c.dir; nx = -21; }
+        c.x = nx; c.z = nz;
+        c.gait += sp*dt*26.0;
+      }
+      /* a crab caught below the waterline by a rising tide legs it inland */
+      if (c.z > zSafe) { c.z = zSafe; c.bolt = Math.max(c.bolt, 0.6); }
+
+      const o = i*8;
+      d[o] = c.x; d[o+1] = 0; d[o+2] = c.z;
+      d[o+3] = c.dir + c.face*Math.PI*0.5;   // sideways, like a crab
+      d[o+4] = c.scale; d[o+5] = 1; d[o+6] = 1; d[o+7] = c.gait;
+    }
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.crabBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, d, 0, this.crabs.length*8);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  }
+
   _drawAll(prog, env, isDepth) {
     const gl = this.gl, s = this.sim;
     prog.use();
@@ -678,6 +859,11 @@ class Props {
       gl.bindVertexArray(this.vao[t]);
       gl.drawArraysInstanced(gl.TRIANGLES, part.first, part.count, inst.n);
     }
+    /* crabs lie flat on whatever they are standing on */
+    prog.set('uStick', 0.95);
+    gl.bindVertexArray(this.crabVAO);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, this.crabPart.count, this.crabs.length);
+
     prog.set('uStick', 0.0);
     gl.bindVertexArray(this.gullVAO);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, this.gullPart.count, this.gulls.length);

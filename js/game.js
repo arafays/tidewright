@@ -1469,9 +1469,12 @@ class Game {
     c3[2] = this.mould.rot;
     c3[3] = this.merlons;
 
-    /* props & gulls */
+    /* props, gulls and crabs */
     this.terrain.setLamps(this.props.list, this.sky.night, this.cam.pos);
     this.props.updateGulls(this.time, dt);
+    if (!this.paused)
+      this.props.updateCrabs(this.time, dt, this.seaBase,
+        this.toolDown ? this.sim.hit : null);
     if (!this.paused && this.phase === 'flood')
       this.props.updateHealth(this.seaBase, dt, p => {
         this.particles.burst(2, p.x, p.y + 0.2, p.z, 10, 1.2, 0.7, 0.03, 0.7);

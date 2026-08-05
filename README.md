@@ -364,6 +364,15 @@ soundtrack — surf built from three bands of filtered noise (body, break and
 hiss) driven by the real swash phase, wind, gulls, and a modal pad through a
 generated reverb.
 
+**And crabs.** Eleven of them, wandering the beach in bursts and sitting still
+between them, walking sideways because that is what crabs do. Their legs run off
+a single gait phase that only advances while they are actually moving, so they
+stop dead rather than treading air. They ride the heightfield like everything
+else, so they will walk up over a rampart you have just raised. They keep to the
+band above the waterline, which means a rising tide herds them up the beach
+ahead of it without anyone having written a retreat — and if you bring a tool
+near one, it bolts.
+
 Measured on an RTX 4070 Laptop at 1600×900 internal, High preset: ~5–6 ms a
 frame. Low / Medium presets scale the simulation, shadow map, water grid and
 render scale for weaker hardware.
@@ -381,7 +390,7 @@ js/sky.js           atmosphere LUT + background (sun, moon, stars, clouds)
 js/sim.js           the sand — avalanche, moisture, tools, AO, metrics, picking
 js/terrain.js       sand surface renderer
 js/water.js         the sea
-js/props.js         procedural adornments and gulls
+js/props.js         procedural adornments, gulls and crabs
 js/particles.js     GPU particles (transform feedback)
 js/post.js          bloom, shafts, DOF, tonemap, FXAA
 js/audio.js         synthesised everything
