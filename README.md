@@ -8,6 +8,11 @@ JavaScript and GLSL, and a beach that actually obeys the angle of repose.
 
 ![The keep at low water](docs/hero.jpg)
 
+**[▶ Watch a castle get built (60s)](docs/demo.mp4)** — dig the moat, wet the line,
+raise the wall out of the spoil, turn out the turrets, cut the gateway, plant the
+pennants, and let the tide come in. Nothing in it is scripted animation; it is the
+simulation running.
+
 > Long before the maps, this coast was a country. It sank in one night — not
 > from war, but because it forgot its own name. The sea keeps what it takes,
 > yet keeps it badly: every tide it tries to hand the kingdom back, grain by
