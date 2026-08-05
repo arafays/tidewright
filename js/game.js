@@ -715,6 +715,33 @@ class Game {
     if (t.mode === 10) {
       const M = this.mould;
       if (!this.toolDown || !h.valid || M.fill >= 1) { s.clearBrush(); return; }
+      /* In Endless Sand the mould fills from the pail, not from the beach.
+         Everywhere else it is a scoop: it takes what it needs out of the ground
+         under it and leaves a hollow, which is the whole bargain. Here there is
+         nothing to bargain with, so it just fills — and quickly. Wetting the
+         ground first still helps, because the mould will take the damper of the
+         two, which keeps the Water tool worth carrying. */
+      const endless = this.mode === 'creative';
+      if (endless) {
+        s.clearBrush();
+        const inc = dt / this.mouldFillTime() * 1.85;
+        const src = Math.max(this.pailWet, h.valid ? h.m : 0);
+        M.wet += (src - M.wet) * Math.min(1, inc * 4.0 + (M.fill < 0.02 ? 1 : 0));
+        M.fill = Math.min(1, M.fill + inc);
+        if (this.frame % 2 === 0) {
+          for (let i = 0; i < 3; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const r = this.radius * (0.5 + Math.random() * 0.45);
+            this.particles.spawn(0,
+              h.x + Math.cos(a) * r, h.y + 0.30 + Math.random() * 0.22, h.z + Math.sin(a) * r,
+              -Math.cos(a) * 0.22, -0.45 - Math.random() * 0.35, -Math.sin(a) * 0.22,
+              0.5 + Math.random() * 0.25, 0.028 + Math.random() * 0.014, src, 0);
+          }
+          if (this.frame % 16 === 0) this.audio.dig();
+        }
+        if (M.fill >= 1) { this.audio.pat(); this.toolDown = false; }
+        return;
+      }
       s.setBrush(h.x, h.z, h.x, h.z, this.radius * 0.88, 0.85, 11, 0);
       const avail = T.sat(h.depth / 0.22);
       const inc = dt / this.mouldFillTime() * (0.22 + 0.78 * avail);
@@ -1214,7 +1241,9 @@ class Game {
           : soaked ? 'soaked — it will run' : 'click where you want it · , . to turn';
         hint.className = 'mould-hint ' + (tooDry || soaked ? 'bad' : 'go');
       } else {
-        hint.textContent = 'hold on damp sand to fill the ' + def.name.toLowerCase();
+        hint.textContent = (this.mode === 'creative' ? 'hold anywhere to fill the '
+                                                     : 'hold on damp sand to fill the ')
+                         + def.name.toLowerCase();
         hint.className = 'mould-hint';
       }
     }
@@ -1285,7 +1314,8 @@ class Game {
       const M = this.mould, def = this.mouldDef();
       if (M.fill < 1) {
         s = M.fill > 0.02 ? 'keep holding — ' + Math.round(M.fill * 100) + '% full'
-                          : 'hold on damp sand to fill the ' + def.name.toLowerCase();
+          : (this.mode === 'creative' ? 'hold anywhere to fill the '
+                                      : 'hold on damp sand to fill the ') + def.name.toLowerCase();
       } else if (M.wet < def.wet - 0.14) { s = 'the sand you scooped was too dry — it will slump'; cls = 'bad'; }
       else { s = 'aim and click to turn it out · , . to turn it'; cls = 'go'; }
     } else if (t.mode === 0) {
