@@ -123,3 +123,111 @@ Bandwidth is not a reason to avoid multiplayer. Design for:
   cosmetic relief locally, but it must never feed back into gameplay.
 
 The next unknown worth spending a week on is **latency feel**, not throughput.
+
+---
+
+# Part 2 — latency
+
+**Verdict: playable at 150 ms, but only because of how this material behaves.
+Lockstep is now empirically ruled out, not just theoretically.**
+
+## How much of each tool lands inside the latency window
+
+If a tool takes two seconds to show its effect, a 150 ms delay is invisible. If
+it is instantaneous, the delay is the whole experience. Measured as height
+change under the brush, as a fraction of the first 1.2 s:
+
+| Tool | 50 ms | 100 ms | **150 ms** | 500 ms |
+|---|---|---|---|---|
+| **Pail** (pour) | 0 % | 0 % | **0 %** | 19 % |
+| **Shovel** (dig) | 4 % | 9 % | **13 %** | 43 % |
+| **Rampart** | 26 % | 53 % | **66 %** | 90 % |
+| **Mould stamp** | 100 % | 100 % | **100 %** | 100 % |
+
+**Pouring is free.** Nothing at all has happened at 150 ms, because the sand is
+still in the air — the game already throws grains as particles with a flight
+time, and that flight time is longer than the network delay. Latency hides
+inside an animation that exists for other reasons.
+
+**Rampart is the exposed one** at 66 %, and **the stamp is fully exposed** at
+100 %. But the stamp is also the easiest thing in the game to predict: it is a
+pure function of position, mould, rotation, radius and height, all known at
+click time. Measured, the stamp is **100 % present on the first frame with
+0 mm of subsequent drift** — a client reproduces it exactly and instantly.
+
+## What an unpredicted client actually gets wrong
+
+Showing a client the authoritative field from RTT ago, while a player drags a
+tool:
+
+| RTT | Rampart worst cell | Rampart mean field | Shovel worst cell |
+|---|---|---|---|
+| 50 ms | 129 mm | 0.08 mm | 68 mm |
+| 150 ms | 215 mm | 0.25 mm | 181 mm |
+| 250 ms | 215 mm | 0.42 mm | 208 mm |
+
+Two things matter here. The error **saturates** — 215 mm at both 150 and
+250 ms, because a tool reaches its target height and stops. And the mean field
+error is a quarter of a millimetre: **the entire error is under your own
+cursor.** Everywhere else the two worlds are identical to within the wire's own
+4 mm quantisation.
+
+That is precisely the shape client-side prediction handles: predict your own
+tool, take everyone else's on authority.
+
+## Divergence — why lockstep is impossible and prediction is not
+
+Same state, run twice, one perturbed. Perturbation of 0.5 mm in a single cell:
+
+| elapsed | max divergence | cells touched |
+|---|---|---|
+| 5 s | 0.72 mm | 337 |
+| 10 s | 10.4 mm | 380 |
+| 15 s | 30.9 mm | 389 |
+| 20 s | 13.5 mm | 366 |
+
+A half-millimetre seed becomes three centimetres in fifteen seconds, then
+oscillates. This is granular criticality: a slope resting exactly at its angle
+of repose is metastable, so a hair's difference decides whether a given
+avalanche fires now or in a second's time. **Two machines cannot stay in step,
+confirmed empirically.**
+
+But on the horizon that prediction actually operates over, differences are
+inert. Seeding a perturbation of 5 mm — orders of magnitude larger than any
+cross-vendor floating-point discrepancy:
+
+| elapsed | 50 ms | 150 ms | 300 ms | 500 ms | 1 s |
+|---|---|---|---|---|---|
+| max divergence | 5 mm | 5 mm | 5 mm | 5 mm | 5 mm |
+
+It neither grows nor spreads for a full second. At a 20 Hz correction rate the
+client is re-anchored every 50 ms, long before criticality has anything to act
+on — and sub-4 mm drift is below the wire format's quantisation floor, so it is
+literally unrepresentable as an error.
+
+## Recommendation
+
+- **Predict your own tools locally; never predict anyone else's.** The whole
+  visible error is under the acting cursor.
+- **The stamp must be predicted** — it is 100 % instantaneous and 100 %
+  reproducible. Draw it the moment the player clicks.
+- **The pour needs nothing.** Its own particle flight already exceeds the
+  network delay.
+- **Rampart, Pat, Carve and Level need local application plus reconciliation.**
+  They are fast enough to notice and approximate enough to correct.
+- **Correct at 20 Hz.** Divergence over one tick is below the protocol's own
+  noise floor.
+- **Never attempt lockstep**, at any tick rate, on any hardware.
+
+## Corrections made during this spike
+
+Recorded because both would have produced confident, wrong conclusions:
+
+1. The first bandwidth run reported idle traffic equal to a flood, with
+   identical 11 KB peaks. That was the harness measuring the tail of the
+   initial sync — deltas are clamped to 0.5 m/tick and the client starts from an
+   empty field, so the first few ticks were full-field catch-up. Fixed by
+   sending a proper keyframe and settling before measuring.
+2. The divergence test was first called "saturating" on a five-second window.
+   Extending to twenty seconds showed it amplifies to centimetres. The
+   short-horizon conclusion survived; the characterisation did not.
